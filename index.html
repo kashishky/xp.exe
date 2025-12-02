@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kashish Kumar | Pilot's Log</title>
+    
+    <!-- Fonts: Retro Tech -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        :root {
+            /* Star Wars "70s Future" Palette */
+            --phosphor-amber: #ffb000;  /* The classic orange/yellow */
+            --phosphor-green: #33ff00;  /* Yavin tactical display */
+            --phosphor-blue: #aaddff;   /* R2D2 Holo blue (desaturated) */
+            --tech-red: #ff4444;        /* X-Wing targeting */
+            
+            --panel-grey: #2a2a2a;      /* Dark instrument panel */
+            --panel-light: #b0b0b0;     /* Dirty white plastoid */
+            --grid-color: rgba(255, 176, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: #000;
+            color: var(--phosphor-amber);
+            font-family: 'Share Tech Mono', monospace;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            user-select: none;
+            /* Global CRT flicker */
+            animation: flicker 0.15s infinite;
+        }
+
+        @keyframes flicker {
+            0% { opacity: 0.99; }
+            100% { opacity: 0.96; }
+        }
+
+        /* --- 1. VIEWPORT LAYERS --- */
+        #viewport {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+        }
+
+        #hyperspace-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 5;
+            /* Improved Blue Tunnel Effect */
+            background: radial-gradient(circle at center, transparent 10%, rgba(0, 100, 255, 0.8) 100%);
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+            mix-blend-mode: screen;
+            box-shadow: inset 0 0 200px rgba(0, 229, 255, 0.8);
+        }
+
+        /* Old School Scanlines */
+        #crt-lines {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 999;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        /* --- 2. 3D HOLO-CONSOLE (TRUE 3D) --- */
+        #holo-stage {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 800px;
+            height: 600px;
+            z-index: 10;
+            perspective: 1000px; /* Crucial for 3D effect */
+            pointer-events: none; /* Let clicks pass to projection */
+        }
+
+        #holo-projector-base {
+            position: absolute;
+            bottom: -50px; left: 50%; transform: translateX(-50%) rotateX(60deg);
+            width: 400px; height: 400px;
+            background: radial-gradient(circle, rgba(0, 150, 255, 0.4) 0%, transparent 70%);
+            border-radius: 50%;
+            filter: blur(20px);
+            opacity: 0;
+            transition: opacity 1s;
+        }
+
+        /* The Floating Content Plane */
+        #holo-plane {
+            position: relative;
+            width: 100%; height: 100%;
+            transform-style: preserve-3d;
+            transform: rotateX(10deg) translateY(0px); /* Tilted back */
+            opacity: 0;
+            transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: auto;
+        }
+
+        /* The Actual Data Card */
+        .data-card {
+            background: rgba(0, 20, 50, 0.6); /* Very dark blue tint */
+            border: 2px solid var(--phosphor-blue);
+            color: var(--phosphor-blue);
+            padding: 40px;
+            width: 100%; height: 100%;
+            box-shadow: 0 0 30px rgba(0, 150, 255, 0.2), inset 0 0 50px rgba(0, 150, 255, 0.1);
+            position: relative;
+            overflow-y: auto;
+            
+            /* Holo Mesh Effect */
+            background-image: 
+                linear-gradient(rgba(0, 150, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 150, 255, 0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+            
+            /* Text Glow */
+            text-shadow: 0 0 5px rgba(0, 150, 255, 0.8);
+        }
+
+        /* Ghosting Layer for 3D feel */
+        .data-card::before {
+            content: '';
+            position: absolute;
+            top:0; left:0; width:100%; height:100%;
+            background: inherit;
+            border: inherit;
+            opacity: 0.3;
+            transform: translateZ(-20px); /* Push back in Z space */
+            pointer-events: none;
+            filter: blur(2px);
+        }
+
+        h1 { font-family: 'Orbitron', sans-serif; font-size: 3rem; text-transform: uppercase; letter-spacing: 6px; border-bottom: 2px solid var(--phosphor-blue); padding-bottom: 10px; margin-bottom: 20px; }
+        h2 { font-size: 1.5rem; color: #fff; margin-bottom: 20px; }
+        p { font-family: 'Rajdhani', sans-serif; font-size: 1.3rem; font-weight: 500; line-height: 1.4; color: #d0eeff; }
+
+        /* Action Button */
+        .btn-action {
+            display: inline-block;
+            background: rgba(0, 150, 255, 0.1);
+            color: var(--phosphor-blue);
+            padding: 15px 30px;
+            border: 2px solid var(--phosphor-blue);
+            margin-top: 30px;
+            font-family: 'Share Tech Mono';
+            font-size: 1.2rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px var(--phosphor-blue);
+            transition: 0.2s;
+        }
+        .btn-action:hover { background: var(--phosphor-blue); color: #000; box-shadow: 0 0 30px var(--phosphor-blue); }
+
+        /* --- 3. COCKPIT UI (RETRO INDUSTRIAL) --- */
+        #cockpit-ui {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100;
+            pointer-events: none;
+            /* Heavy Vignette */
+            background: radial-gradient(circle at center, transparent 60%, #000 100%);
+        }
+
+        .hud-panel {
+            position: absolute;
+            background: #222; /* Dark industrial grey */
+            border: 4px solid #555; /* Bezel */
+            border-radius: 2px;
+            padding: 10px;
+            pointer-events: auto;
+            box-shadow: 
+                inset 2px 2px 0px #666, 
+                inset -2px -2px 0px #000,
+                5px 5px 10px #000;
+        }
+
+        /* Nav Computer */
+        .nav-computer { bottom: 30px; right: 30px; width: 320px; background: #1a1a1a; }
+        
+        .status-display { top: 30px; left: 30px; min-width: 250px; background: #1a1a1a; }
+
+        /* Physical Retro Buttons */
+        .nav-grid {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 15px;
+        }
+
+        .nav-btn {
+            height: 50px;
+            font-family: 'Share Tech Mono';
+            font-weight: bold;
+            font-size: 0.8rem;
+            border: none;
+            cursor: pointer;
+            color: #111;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.4);
+            position: relative;
+            
+            /* Physical Button Look (Bevels) */
+            box-shadow: 
+                inset 1px 1px 0px rgba(255,255,255,0.3),
+                inset -2px -2px 0px rgba(0,0,0,0.4),
+                0 3px 0 #000; /* 3D depth */
+            border-radius: 4px;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .nav-btn:active {
+            transform: translateY(3px); /* Press down */
+            box-shadow: none;
+        }
+
+        /* Button Colors (Faded Industrial) */
+        .btn-home { background: #e69500; } /* Amber */
+        .btn-bio { background: #4caf50; }  /* Green */
+        .btn-res { background: #2196f3; }  /* Blue */
+        .btn-art { background: #9c27b0; }  /* Purple */
+        .btn-com { background: #ffeb3b; }  /* Yellow */
+        .btn-dl { background: #f44336; color: white !important; }   /* Red */
+
+        /* Radar Canvas */
+        #radar {
+            background: #050505;
+            border: 2px solid #333;
+            width: 100%; height: 120px;
+            margin-top: 5px;
+            image-rendering: pixelated; /* Retro crispness */
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        /* --- RESPONSIVENESS & LAYOUT FIXES --- */
+        @media (max-width: 900px) {
+            #holo-stage {
+                width: 90%;
+                height: 60vh;
+            }
+            .hud-panel {
+                transform: scale(0.8);
+            }
+            .nav-computer {
+                transform-origin: bottom right;
+                bottom: 20px; right: 20px;
+            }
+            .status-display {
+                transform-origin: top left;
+                top: 20px; left: 20px;
+            }
+        }
+
+        @media (max-height: 800px) {
+            /* Prevent overlap on shorter screens */
+            #holo-stage {
+                height: 55vh; 
+                margin-top: -20px; /* Slight offset up */
+            }
+        }
+
+        /* --- CONTENT TEMPLATES --- */
+        .hidden-content { display: none; }
+
+        /* Decipher Box */
+        .research-box {
+            border: 1px solid var(--phosphor-blue);
+            background: rgba(0, 50, 100, 0.3);
+            margin-bottom: 20px;
+            padding: 15px;
+        }
+        .btn-decipher {
+            background: transparent; border: 1px solid var(--phosphor-blue); color: var(--phosphor-blue);
+            font-family: 'Share Tech Mono'; padding: 5px; margin-top: 5px; cursor: pointer; text-transform: uppercase;
+        }
+        .btn-decipher:hover { background: var(--phosphor-blue); color: #000; }
+        
+        .decipher-result {
+            margin-top: 5px; color: #fff; font-style: italic; border-left: 2px solid #fff; padding-left: 10px; display: none;
+        }
+
+        /* Chat Styles */
+        .chat-box {
+            background: rgba(0,0,0,0.5); border: 1px solid var(--phosphor-blue); height: 150px; overflow-y: auto; padding: 10px;
+            margin-bottom: 10px; text-align: left; font-size: 0.9rem;
+        }
+        .chat-input { flex: 1; padding: 10px; background: #000; border: 1px solid var(--phosphor-blue); color: var(--phosphor-blue); font-family: 'Share Tech Mono'; }
+
+    </style>
+</head>
+<body>
+
+    <!-- 1. BACKGROUND LAYERS -->
+    <div id="hyperspace-overlay"></div>
+    <div id="crt-lines"></div> 
+    <div id="viewport"></div> 
+
+    <!-- 2. HOLO STAGE -->
+    <div id="holo-stage">
+        <div id="holo-projector-base"></div> <!-- The glowing light source -->
+        <div id="holo-plane">
+            <!-- Content Injected Here -->
+        </div>
+    </div>
+
+    <!-- 3. COCKPIT UI -->
+    <div id="cockpit-ui">
+        
+        <!-- SYSTEM STATUS -->
+        <div class="hud-panel status-panel">
+            <div style="color: var(--panel-light); font-size: 0.7rem; border-bottom: 1px solid #444; margin-bottom: 5px;">SYSTEM DIAGNOSTIC</div>
+            <div style="font-size: 0.8rem; display: grid; gap: 4px;">
+                <div style="display:flex; justify-content:space-between; color: var(--phosphor-green);"><span>HYPERDRIVE</span> <span>[RDY]</span></div>
+                <div style="display:flex; justify-content:space-between; color: var(--phosphor-green);"><span>SHIELDS</span> <span>[100%]</span></div>
+                <div style="height: 2px; background: #333; margin: 2px 0;"></div>
+                <div style="color: var(--phosphor-amber);">VEL: <span id="speed-indicator">SUB-LIGHT</span></div>
+                <div style="color: var(--tech-red); font-size: 1.1rem; margin-top:5px; text-shadow: 0 0 5px var(--tech-red);" id="current-sector">
+                    SECTOR: UNKNOWN
+                </div>
+            </div>
+        </div>
+
+        <!-- NAV COMPUTER -->
+        <div class="hud-panel nav-computer">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #444; padding-bottom:5px;">
+                <span style="color: var(--phosphor-amber); font-weight:bold; letter-spacing:1px;">NAV COMPUTER</span>
+                <span style="font-size: 0.6rem; color: #666;">V.2.4</span>
+            </div>
+            
+            <!-- Perspective Radar -->
+            <canvas id="radar" width="300" height="120"></canvas>
+
+            <!-- Physical Buttons -->
+            <div class="nav-grid">
+                <button class="nav-btn btn-home" onclick="engageJump('HOME')">HOME</button>
+                <button class="nav-btn btn-bio" onclick="engageJump('BIO')">BIO</button>
+                <button class="nav-btn btn-res" onclick="engageJump('RESEARCH')">RSRCH</button>
+                <button class="nav-btn btn-art" onclick="engageJump('ART')">HOLO</button>
+                <button class="nav-btn btn-com" onclick="engageJump('COMMS')">COMMS</button>
+                <button class="nav-btn btn-dl" onclick="window.open('CV_Kashish_Kumar.pdf')">DOWNLOAD CV</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 4. CONTENT DATABASE -->
+    
+    <!-- HOME -->
+    <div id="content-HOME" class="hidden-content">
+        <div class="data-card">
+            <h1>Kashish Kumar</h1>
+            <p style="color:white; font-size:1.5rem; border-bottom: 1px solid var(--phosphor-blue); display:inline-block;">THE OPERATOR</p>
+            <p style="margin-top:20px;">Biochemistry // Public Health // 3D Systems</p>
+            <div style="margin: 30px 0; border: 1px dashed var(--phosphor-blue); padding: 20px;">
+                <p>Current Status:</p>
+                <p style="color: white; font-size: 1.2rem;">Undergraduate @ Columbia University</p>
+                <p style="font-size: 0.9rem; margin-top:10px;">Millennium Fellow & Research Associate</p>
+            </div>
+            <button class="btn-action" onclick="engageJump('BIO')">INITIATE BIO-SCAN</button>
+        </div>
+    </div>
+
+    <!-- BIO -->
+    <div id="content-BIO" class="hidden-content">
+        <div class="data-card">
+            <h1>Bio-Log</h1>
+            <div style="display:flex; justify-content: space-around; margin-bottom: 20px; border-bottom: 1px solid var(--phosphor-blue); padding-bottom: 10px;">
+                <span>ORIGIN: Texas (RGV)</span>
+                <span>BASE: NYC</span>
+            </div>
+            <p style="text-align:left;">
+                My work oscillates between the microscope and the macroscopic world.
+            </p>
+            <p style="text-align:left; margin-top: 15px;">
+                Whether I'm mapping <b>transcriptional dynamics of NF-κB</b> in a wet lab or designing health workshops for the South Bronx, I study systems: How they break, how they grow, and how we can engineer them to be resilient.
+            </p>
+        </div>
+    </div>
+
+    <!-- RESEARCH -->
+    <div id="content-RESEARCH" class="hidden-content">
+        <div class="data-card">
+            <h1>Mission Data</h1>
+            
+            <div class="research-box">
+                <h3 style="color:white;">Ghosh Lab // Columbia Medical</h3>
+                <p style="font-size: 0.9rem;">Deep Reinforcement Learning & lncRNAs.</p>
+                <button class="btn-decipher" onclick="decipher(1, 'Deep Reinforcement Learning Tuned Self-Attention for Regulatory Variant Mapping in lncRNAs. Developed a deep Q-learning framework to optimize self-attention for nucleotide-level interpretation of long non-coding RNAs.')">TRANSLATE TO BASIC</button>
+                <div id="decipher-1" class="decipher-result"></div>
+            </div>
+
+            <div class="research-box">
+                <h3 style="color:white;">Projects for Peace</h3>
+                <p style="font-size: 0.9rem;">Roots of Resilience: Migrant Health Study.</p>
+                <button class="btn-decipher" onclick="decipher(2, 'Study of health risks among agricultural migrants in the Rio Grande Valley due to pesticide exposure. Investigates socio-economic factors using Health Belief Model.')">TRANSLATE TO BASIC</button>
+                <div id="decipher-2" class="decipher-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ART -->
+    <div id="content-ART" class="hidden-content">
+        <div class="data-card">
+            <h1>Holodeck</h1>
+            <p>Visualizing biological concepts via Blender.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px;">
+                <div style="height: 150px; border: 2px solid var(--phosphor-blue); display:flex; align-items:center; justify-content:center; box-shadow: inset 0 0 20px var(--phosphor-blue);">
+                    [RENDER_01]
+                </div>
+                <div style="height: 150px; border: 2px solid var(--phosphor-blue); display:flex; align-items:center; justify-content:center; box-shadow: inset 0 0 20px var(--phosphor-blue);">
+                    [RENDER_02]
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- COMMS -->
+    <div id="content-COMMS" class="hidden-content">
+        <div class="data-card">
+            <h1>Protocol Droid K-3PO</h1>
+            <div style="text-align: center; margin: 20px 0;">
+                <!-- Droid SVG -->
+                <svg width="60" height="60" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="40" stroke="#ffb000" stroke-width="4" fill="none"/>
+                    <circle cx="35" cy="40" r="8" fill="#fff" />
+                    <circle cx="65" cy="40" r="8" fill="#fff" />
+                    <rect x="35" y="65" width="30" height="5" fill="#ffb000" />
+                </svg>
+            </div>
+            <div class="chat-box" id="chat-log">
+                <div style="color:white;">K-3PO: Greetings. Ask me about Kashish's research.</div>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="chat-input" class="chat-input" placeholder="Query..." onkeypress="if(event.key === 'Enter') sendChat()">
+                <button class="btn-decipher" style="margin:0;" onclick="sendChat()">SEND</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- API KEY ---
+        const apiKey = ""; 
+
+        // --- GEMINI LOGIC ---
+        const kashishContext = `
+            You are K-3PO, a protocol droid for Kashish Kumar. Voice: C-3PO (polite, anxious, formal).
+            Data: Undergraduate @ Columbia. Research: Ghosh Lab (AI/DNA), Roots of Resilience (Migrant Health), Millennium Fellow (Cardio Health).
+        `;
+
+        async function callGemini(userPrompt, systemInstruction = "") {
+            if (!apiKey) { alert("API Key missing."); return null; }
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = { contents: [{ parts: [{ text: userPrompt }] }], systemInstruction: { parts: [{ text: systemInstruction }] } };
+            try {
+                const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || "Comm Error.";
+            } catch (error) { return "Link Offline."; }
+        }
+
+        async function decipher(id, text) {
+            const div = document.getElementById(`decipher-${id}`);
+            div.style.display = "block"; div.innerText = "Processing...";
+            const res = await callGemini(`Translate this complex research into simple terms a Star Wars pilot would understand. Max 1 sentence. Text: "${text}"`);
+            if (res) div.innerText = res;
+        }
+
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const log = document.getElementById('chat-log');
+            const msg = input.value.trim();
+            if (!msg) return;
+            log.innerHTML += `<div style="text-align:right; color:var(--phosphor-blue); margin-top:5px;">${msg}</div>`;
+            input.value = "";
+            const res = await callGemini(msg, kashishContext);
+            if (res) log.innerHTML += `<div style="font-weight:bold; margin-top:5px; color:white;">K-3PO: ${res}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // --- THREE.JS STARFIELD ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('viewport').appendChild(renderer.domElement);
+
+        const starCount = 4000;
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = new Float32Array(starCount * 3);
+        
+        for(let i=0; i<starCount; i++) {
+            starPos[i*3] = (Math.random() - 0.5) * 4000;
+            starPos[i*3+1] = (Math.random() - 0.5) * 4000;
+            starPos[i*3+2] = Math.random() * 2000 - 1000;
+        }
+        
+        starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+        // Use a slightly yellowish white for retro feel
+        const starMat = new THREE.PointsMaterial({color: 0xffffdd, size: 1.8});
+        const starMesh = new THREE.Points(starGeo, starMat);
+        scene.add(starMesh);
+        camera.position.z = 100;
+
+        let starSpeed = 2; 
+        
+        function animateStars() {
+            const positions = starGeo.attributes.position.array;
+            for(let i=0; i<starCount; i++) {
+                positions[i*3+2] += starSpeed;
+                if(positions[i*3+2] > 200) positions[i*3+2] = -1000;
+            }
+            starGeo.attributes.position.needsUpdate = true;
+            renderer.render(scene, camera);
+            requestAnimationFrame(animateStars);
+        }
+        animateStars();
+
+        // --- NAVIGATION LOGIC ---
+        const holoStage = document.getElementById('holo-stage');
+        const holoPlane = document.getElementById('holo-plane');
+        const projector = document.getElementById('holo-projector-base');
+        const overlayEl = document.getElementById('hyperspace-overlay');
+        const speedInd = document.getElementById('speed-indicator');
+        const sectorInd = document.getElementById('current-sector');
+        
+        // Load HOME immediately
+        window.onload = () => loadContent('HOME');
+
+        function engageJump(sectorId) {
+            // 1. UI Updates
+            sectorInd.innerText = "CALCULATING...";
+            sectorInd.style.color = "var(--phosphor-amber)";
+            speedInd.innerText = "HYPERSPACE";
+            
+            // 2. Hide Current Holo
+            holoPlane.style.opacity = 0;
+            holoPlane.style.transform = "rotateX(10deg) translateY(50px) scale(0.9)"; // Shrink down
+            projector.style.opacity = 0; // Turn off light
+
+            // 3. Hyperspace FX
+            starSpeed = 150; // Fast
+            overlayEl.style.opacity = 1; // Blue Tunnel
+            
+            // 4. Travel Time (1.2s)
+            setTimeout(() => {
+                // Drop Out
+                starSpeed = 2; // Cruise
+                overlayEl.style.opacity = 0;
+                speedInd.innerText = "SUB-LIGHT";
+                sectorInd.innerText = "SECTOR: " + sectorId;
+                sectorInd.style.color = "var(--tech-red)";
+                
+                // Load & Reveal Holo
+                loadContent(sectorId);
+            }, 1200);
+        }
+
+        function loadContent(id) {
+            const contentHTML = document.getElementById('content-' + id).innerHTML;
+            holoPlane.innerHTML = contentHTML;
+            
+            // Holo Reveal Animation
+            setTimeout(() => {
+                projector.style.opacity = 1; // Light on
+                holoPlane.style.opacity = 1;
+                holoPlane.style.transform = "rotateX(10deg) translateY(0px) scale(1)"; // Rise up
+            }, 100);
+        }
+
+        // --- RETRO TARGETING RADAR ---
+        const rCanvas = document.getElementById('radar');
+        const rCtx = rCanvas.getContext('2d');
+        let scanLineY = 0;
+
+        // SECTOR LOCATIONS (Fixed dots on tactical map)
+        const sectors = [
+            { id: 'HOME', x: 150, y: 60, color: '#e69500' }, // Amber
+            { id: 'BIO', x: 220, y: 40, color: '#4caf50' }, // Green
+            { id: 'RESEARCH', x: 80, y: 80, color: '#2196f3' }, // Blue
+            { id: 'ART', x: 200, y: 90, color: '#9c27b0' }, // Purple
+            { id: 'COMMS', x: 60, y: 30, color: '#ffeb3b' } // Yellow
+        ];
+        
+        function drawRadar() {
+            // Clear
+            rCtx.fillStyle = '#050505';
+            rCtx.fillRect(0,0,300,120);
+            
+            // 1. Draw Grid (Tactical Map)
+            rCtx.strokeStyle = '#333';
+            rCtx.lineWidth = 1;
+            rCtx.beginPath();
+            // Vertical Lines
+            for(let i=0; i<300; i+=30) {
+                rCtx.moveTo(i, 0); rCtx.lineTo(i, 120);
+            }
+            // Horizontal Lines
+            for(let i=0; i<120; i+=30) {
+                rCtx.moveTo(0, i); rCtx.lineTo(300, i);
+            }
+            rCtx.stroke();
+
+            // 2. Draw Sector Blips (The "Content Pages")
+            sectors.forEach(s => {
+                rCtx.fillStyle = s.color;
+                rCtx.beginPath();
+                rCtx.arc(s.x, s.y, 4, 0, Math.PI * 2);
+                rCtx.fill();
+                
+                // Text Label (Tiny)
+                rCtx.fillStyle = '#fff';
+                rCtx.font = '8px monospace';
+                rCtx.fillText(s.id, s.x + 6, s.y + 3);
+            });
+
+            // 3. Scanner Line (Top Down)
+            scanLineY += 1;
+            if(scanLineY > 120) scanLineY = 0;
+            
+            rCtx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+            rCtx.beginPath();
+            rCtx.moveTo(0, scanLineY);
+            rCtx.lineTo(300, scanLineY);
+            rCtx.stroke();
+
+            // 4. Player Position (Center Crosshair)
+            rCtx.strokeStyle = '#fff';
+            rCtx.lineWidth = 2;
+            rCtx.beginPath();
+            rCtx.moveTo(140, 60); rCtx.lineTo(160, 60);
+            rCtx.moveTo(150, 50); rCtx.lineTo(150, 70);
+            rCtx.stroke();
+
+            requestAnimationFrame(drawRadar);
+        }
+        drawRadar();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
